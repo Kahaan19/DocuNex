@@ -1,0 +1,43 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Vector stores / knowledge graph artifacts (generated at runtime)
+vector_store/
+vector_db/
+vector_db_*/
+graph_db/
+graph_db_*/
+knowledge_graph_data/
+
+# Model caches
+.cache/
+*.pt
+*.bin
+
+# Gradio
+gradio_cached_examples/
+flagged/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
