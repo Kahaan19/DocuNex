@@ -373,7 +373,7 @@ class GraphRAGManager:
 - 📄 Document Chunks: {len(self.document_chunks)}
 - 🗂️ Vector Store: {'✅ Available' if self.vector_store else '❌ Not Available'}
 - 🧠 Device: {self.device}
-- 🚀 GPU Memory: {torch.cuda.memory_allocated() / 1024**2:.1f}MB" if torch.cuda.is_available() else "N/A"
+- 🚀 GPU Memory: {f"{torch.cuda.memory_allocated() / 1024**2:.1f}MB" if torch.cuda.is_available() else "N/A"}
 
 """
         
@@ -523,7 +523,7 @@ class GraphRAGManager:
             batch_size = 32 if self.device == "cuda" else 16
             
             try:
-                with torch.no_data():
+                with torch.no_grad():
                     chunk_embeddings = self.sentence_model.encode(
                         chunk_texts,
                         batch_size=batch_size,
