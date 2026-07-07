@@ -78,8 +78,6 @@ class RAGManager:
             self.vector_store.save_local(self.vector_store_path)
             print(f"✅ Vector store created with {len(all_chunks)} chunks")
             return True
-            print(f"✅ Vector store created with {len(all_chunks)} chunks")
-            return True
 
         except Exception as e:
             print(f"❌ Error creating vector store: {str(e)}")
@@ -174,17 +172,21 @@ class RAGManager:
                     metadata = json.load(f)
                     self.vector_dimension = metadata.get('vector_dimension', 384)
 
-            self.vector_store = FAISS.load_local(self.vector_store_path, self.embedding_model)
+            # Ensure the embedding model is initialized before loading the store
+            if not self.embedding_model:
+                if not self.initialize_embeddings():
+                    return False
+
+            self.vector_store = FAISS.load_local(
+                self.vector_store_path,
+                self.embedding_model,
+                allow_dangerous_deserialization=True
+            )
             if hasattr(self.vector_store, "docstore") and hasattr(self.vector_store.docstore,"search"):
                 self.document_store = [doc for doc in self.vector_store.docstore._dict.values()]
             else:
                 print("❌ Could not load document store from FAISS vector store")
                 return False
-
-            # Initialize embedding model
-            if not self.embedding_model:
-                if not self.initialize_embeddings():
-                    return False
 
             print(f"✅ Vector store loaded with {len(self.document_store)} chunks")
             return True
