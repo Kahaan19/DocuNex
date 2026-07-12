@@ -13,7 +13,6 @@ Local-first Retrieval-Augmented Generation (RAG) system for chatting with your d
 ## Table of Contents
 
 - [Overview](#overview)
-- [Demo](#demo)
 - [Features](#features)
 - [Architecture](#architecture)
 - [How a Query Is Answered](#how-a-query-is-answered)
@@ -42,21 +41,6 @@ All answer generation runs through a local **Ollama** model, so the whole pipeli
 - Hybrid GraphRAG retrieval — combines semantic chunk search with knowledge-graph subgraph traversal, then degrades gracefully to vector search when the graph yields nothing.
 - Runtime-adaptive compute — auto-detects CUDA vs. CPU and sizes embedding batches accordingly.
 - Fault-tolerant integrations — the app stays usable when Neo4j, Ollama, or the GPU is unavailable, surfacing status instead of crashing.
-
-## Demo
-
-> **📸 Add a screenshot or GIF here.** Recruiters skim visually — a short clip of building a knowledge base and asking a question is the highest-impact thing you can add to this README.
->
-> Suggested captures:
-> 1. The **Upload & Build** tab ingesting a PDF/URL.
-> 2. The **Ask Questions** tab streaming a grounded answer with cited sources.
-> 3. (Optional) The Neo4j browser showing the generated knowledge graph.
->
-> Save images to a `docs/` or `assets/` folder and embed them, e.g.:
->
-> ```markdown
-> ![DocuNex demo](assets/demo.gif)
-> ```
 
 ## Features
 
