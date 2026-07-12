@@ -29,6 +29,11 @@ knowledge_graph_data/
 *.pt
 *.bin
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Gradio
 gradio_cached_examples/
 flagged/

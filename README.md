@@ -2,6 +2,7 @@
 
 Local-first Retrieval-Augmented Generation (RAG) system for chatting with your documents and URLs — with an optional **Knowledge Graph mode** (GraphRAG + Neo4j) and **voice input/output** (Whisper + gTTS). Runs entirely on local models via [Ollama](https://ollama.com), so no OpenAI/Anthropic API key is required.
 
+[![CI](https://github.com/Kahaan19/DocuNex/actions/workflows/ci.yml/badge.svg)](https://github.com/Kahaan19/DocuNex/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Gradio](https://img.shields.io/badge/UI-Gradio-orange)
 ![LangChain](https://img.shields.io/badge/orchestration-LangChain-1C3C3C)
@@ -21,6 +22,7 @@ Local-first Retrieval-Augmented Generation (RAG) system for chatting with your d
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [Testing](#testing)
 - [Roadmap](#roadmap)
 - [Known Issues](#known-issues)
 - [Author](#author)
@@ -155,13 +157,19 @@ sequenceDiagram
 DocuNex/
 ├── ContextBasedQuestionsUsingLLM.py   # Main Gradio app (RAG + GraphRAG, Neo4j sync)
 ├── SpeechToTextUsingWhisper.py        # Same app + voice input/output (Whisper, gTTS)
+├── config.py                          # Centralized, env-driven configuration
+├── ollama_utils.py                    # Shared Ollama connection + streaming helpers
+├── neo4j_utils.py                     # Shared Neo4j driver, sanitizers, graph insert
 ├── rag_manager.py                     # RAGManager: FAISS-backed vector store lifecycle
 ├── graph_rag_manager.py               # GraphRAGManager: NER, knowledge graph, Neo4j export
 ├── rag_chain.py                       # Answer generation for GraphRAG via Ollama
 ├── rag.py                             # Answer generation for standard RAG via Ollama
 ├── document_loader.py                 # PDF / DOCX / TXT ingestion
 ├── url_text_extractor.py              # Web page text extraction
-├── requirements.txt
+├── tests/                             # pytest suite for the core helpers
+├── .github/workflows/ci.yml           # GitHub Actions: run tests on push / PR
+├── requirements.txt                   # Runtime dependencies
+├── requirements-dev.txt               # Dev/test dependencies (adds pytest)
 ├── .env.example                       # Neo4j connection template
 └── .gitignore
 ```
@@ -218,24 +226,41 @@ The Gradio app launches at `http://localhost:7860`.
 
 ## Configuration
 
-| Variable / Constant | Location | Default | Purpose |
-|---|---|---|---|
-| `NEO4J_URI` | `.env` | `bolt://localhost:7687` | Neo4j connection string |
-| `NEO4J_USER` | `.env` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `.env` | `password` | Neo4j password |
-| `OLLAMA_BASE_URL` | in-code constant | `http://localhost:11434` | Ollama API endpoint |
-| `OLLAMA_MODEL` | in-code constant | `gemma:2b` | Ollama model used for answer generation |
+All settings are read from the environment (via a `.env` file) in [`config.py`](config.py), with the defaults below.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection string |
+| `NEO4J_USER` | `neo4j` | Neo4j username |
+| `NEO4J_PASSWORD` | `password` | Neo4j password |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
+| `OLLAMA_MODEL` | `gemma:2b` | Ollama model used for answer generation |
+| `BASE_PERSIST_DIR` | `./graph_db` | Where GraphRAG knowledge graphs are stored |
+| `BASE_VECTOR_DIR` | `./vector_db` | Where RAG vector stores are stored |
+
+## Testing
+
+The core helpers (configuration, Ollama connection/streaming, Neo4j sanitizers) are covered by a `pytest` suite that runs without a GPU, Ollama, or Neo4j — external calls are faked, so the tests are fast and CI-friendly.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests also run automatically on every push and pull request via [GitHub Actions](.github/workflows/ci.yml) across Python 3.10–3.12.
 
 ## Roadmap
 
-- [ ] Consolidate the duplicated app logic in `ContextBasedQuestionsUsingLLM.py` and `SpeechToTextUsingWhisper.py` into shared modules
-- [ ] Add automated tests for ingestion, chunking, and retrieval
+- [x] Consolidate duplicated app logic into shared modules (`config.py`, `ollama_utils.py`, `neo4j_utils.py`)
+- [x] Add an automated test suite and CI
+- [ ] Extend test coverage to ingestion, chunking, and retrieval
+- [ ] Merge the two entry points into a single app with a `--voice` flag
 - [ ] Support additional LLM backends beyond Ollama
 - [ ] Persist chat history per session
 
 ## Known Issues
 
-- `ContextBasedQuestionsUsingLLM.py` and `SpeechToTextUsingWhisper.py` share substantial duplicated logic (Neo4j setup, Ollama checks, RAG/GraphRAG building) since the latter was extended from the former to add voice features. Consolidating them into a shared module is the top item on the [roadmap](#roadmap).
+- The two entry points (`ContextBasedQuestionsUsingLLM.py` and `SpeechToTextUsingWhisper.py`) now share their config and Ollama/Neo4j helpers, but still duplicate some Gradio UI wiring and RAG-building glue. Merging them into one app with a `--voice` flag is on the [roadmap](#roadmap).
 
 ## Author
 
