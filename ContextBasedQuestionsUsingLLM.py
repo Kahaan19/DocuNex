@@ -1,5 +1,4 @@
 import os
-from neo4j import GraphDatabase
 import shutil
 from dotenv import load_dotenv
 import gradio as gr
@@ -24,31 +23,27 @@ rag_manager = None
 # Load environment variables
 load_dotenv()
 
-# Neo4j connection setup
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+# Shared configuration and helpers (deduplicated across entry points)
+from config import (
+    NEO4J_URI,
+    NEO4J_USER,
+    NEO4J_PASSWORD,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    BASE_PERSIST_DIR,
+    BASE_VECTOR_DIR,
+    DEVICE as device,
+)
+from ollama_utils import check_ollama_connection
+from neo4j_utils import (
+    create_neo4j_driver,
+    clear_neo4j_database,
+    insert_graph_to_neo4j,
+)
 
-neo4j_driver = None
-try:
-    neo4j_driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-    # Test the connection
-    with neo4j_driver.session() as session:
-        session.run("RETURN 1")
-    print("✅ Connected to Neo4j successfully")
-except Exception as e:
-    print(f"⚠️ Could not connect to Neo4j: {e}")
-    neo4j_driver = None
+# Neo4j connection (optional; only used for GraphRAG)
+neo4j_driver = create_neo4j_driver()
 
-# Ollama configuration
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma:2b"
-
-BASE_PERSIST_DIR = "./graph_db"
-BASE_VECTOR_DIR = "./vector_db"
-
-# Initialize device
-device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Using device: {device}")
 
 # Import your custom modules with better error handling
@@ -109,146 +104,6 @@ def initialize_embeddings(self) -> bool:
         return True
     except Exception as e:
         print(f"❌ Error loading embedding model: {str(e)}")
-        return False
-
-def clear_neo4j_database():
-    """Clear all nodes and relationships in Neo4j."""
-    if not neo4j_driver:
-        return False
-    try:
-        with neo4j_driver.session() as session:
-            # Clear in batches to avoid memory issues
-            session.run("MATCH (n) WITH n LIMIT 10000 DETACH DELETE n")
-            # Check if there are more nodes
-            result = session.run("MATCH (n) RETURN count(n) as count")
-            count = result.single()["count"]
-            if count > 0:
-                print(f"⚠️ Still {count} nodes remaining - may need multiple clears")
-        print("✅ Cleared Neo4j database")
-        return True
-    except Exception as e:
-        print(f"❌ Error clearing Neo4j: {e}")
-        return False
-
-def sanitize_rel_type(rel_type):
-    """Sanitize relationship type for Neo4j"""
-    if not rel_type:
-        return "RELATED_TO"
-    
-    # Replace non-alphanumeric characters with underscores and uppercase
-    rel_type = re.sub(r'[^a-zA-Z0-9_]', '_', str(rel_type)).upper()
-    
-    # Remove multiple consecutive underscores
-    rel_type = re.sub(r'_+', '_', rel_type)
-    
-    # Remove leading/trailing underscores
-    rel_type = rel_type.strip('_')
-    
-    # Neo4j relationship types cannot start with a number or be empty
-    if not rel_type or rel_type[0].isdigit():
-        rel_type = "RELATED_TO"
-    
-    # Ensure it's not too long
-    if len(rel_type) > 50:
-        rel_type = rel_type[:50]
-    
-    return rel_type
-
-def sanitize_node_label(label):
-    """Sanitize node label for Neo4j"""
-    if not label:
-        return "Entity"
-    
-    # Replace non-alphanumeric characters with underscores
-    label = re.sub(r'[^a-zA-Z0-9_]', '_', str(label))
-    
-    # Remove multiple consecutive underscores
-    label = re.sub(r'_+', '_', label)
-    
-    # Remove leading/trailing underscores
-    label = label.strip('_')
-    
-    # Ensure it starts with a letter
-    if not label or label[0].isdigit():
-        label = "Entity_" + label if label else "Entity"
-    
-    # Ensure it's not too long
-    if len(label) > 50:
-        label = label[:50]
-    
-    return label
-
-def insert_graph_to_neo4j(nodes, relationships):
-    """Insert knowledge graph data into Neo4j with better error handling."""
-    if not neo4j_driver:
-        print("❌ Neo4j not connected.")
-        return False
-
-    try:
-        with neo4j_driver.session() as session:
-            # Create nodes with better error handling
-            nodes_created = 0
-            for node in nodes:
-                try:
-                    node_id = str(node.get("id", f"node_{uuid.uuid4().hex[:8]}"))
-                    node_label = sanitize_node_label(node.get("label", "Entity"))
-                    node_props = node.get("properties", {})
-                    
-                    # Ensure node_props are serializable
-                    clean_props = {}
-                    for key, value in node_props.items():
-                        if isinstance(value, (str, int, float, bool)):
-                            clean_props[key] = value
-                        else:
-                            clean_props[key] = str(value)
-
-                    session.run(
-                        f"MERGE (n:{node_label} {{id: $id}}) SET n += $props",
-                        id=node_id, props=clean_props
-                    )
-                    nodes_created += 1
-                except Exception as e:
-                    print(f"⚠️ Error creating node {node.get('id', 'unknown')}: {e}")
-                    continue
-
-            # Create relationships with better error handling
-            relationships_created = 0
-            for rel in relationships:
-                try:
-                    source_id = str(rel.get("source", ""))
-                    target_id = str(rel.get("target", ""))
-                    rel_type = sanitize_rel_type(rel.get("type", "RELATED_TO"))
-                    rel_props = rel.get("properties", {})
-                    
-                    if not source_id or not target_id:
-                        continue
-                    
-                    # Ensure rel_props are serializable
-                    clean_props = {}
-                    for key, value in rel_props.items():
-                        if isinstance(value, (str, int, float, bool)):
-                            clean_props[key] = value
-                        else:
-                            clean_props[key] = str(value)
-
-                    session.run(
-                        f"""
-                        MATCH (a {{id: $source}}), (b {{id: $target}})
-                        MERGE (a)-[r:{rel_type}]->(b)
-                        SET r += $props
-                        """,
-                        source=source_id, target=target_id, props=clean_props
-                    )
-                    relationships_created += 1
-                except Exception as e:
-                    print(f"⚠️ Error creating relationship {rel.get('source', 'unknown')} -> {rel.get('target', 'unknown')}: {e}")
-                    continue
-
-        print(f"✅ Successfully inserted {nodes_created} nodes and {relationships_created} relationships into Neo4j")
-        return True
-    except Exception as e:
-        print(f"❌ Error inserting graph into Neo4j: {e}")
-        traceback.print_exc()
         return False
 
 def extract_graph_data_from_manager():
@@ -354,25 +209,6 @@ def extract_graph_data_from_manager():
         traceback.print_exc()
         return [], []
 
-def check_ollama_connection():
-    """Check if Ollama is running and model is available"""
-    try:
-        response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
-        if response.status_code == 200:
-            models = response.json().get('models', [])
-            model_names = [model['name'] for model in models]
-            if OLLAMA_MODEL in model_names or any(OLLAMA_MODEL in name for name in model_names):
-                return True, f"✅ Ollama connected. Available models: {', '.join(model_names[:3])}"
-            else:
-                return False, f"❌ Model '{OLLAMA_MODEL}' not found. Available: {', '.join(model_names[:3])}\nRun: ollama pull {OLLAMA_MODEL}"
-        return False, "❌ Ollama not responding"
-    except requests.exceptions.ConnectionError:
-        return False, f"❌ Cannot connect to Ollama at {OLLAMA_BASE_URL}\nMake sure Ollama is running: ollama serve"
-    except requests.exceptions.Timeout:
-        return False, "❌ Ollama connection timeout"
-    except Exception as e:
-        return False, f"❌ Ollama connection failed: {str(e)}"
-
 def cleanup_old_databases():
     """Properly cleanup old databases and their directories"""
     global graph_rag_manager, current_persist_dir, current_vector_dir
@@ -471,7 +307,7 @@ def handle_inputs(urls, files, rag_type, progress=gr.Progress()):
             
             # Clear Neo4j database for fresh start
             if neo4j_driver:
-                clear_neo4j_database()
+                clear_neo4j_database(neo4j_driver)
 
             # Create a new unique persist directory
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -503,7 +339,7 @@ def handle_inputs(urls, files, rag_type, progress=gr.Progress()):
                 try:
                     nodes, relationships = extract_graph_data_from_manager()
                     if nodes and relationships:
-                        success = insert_graph_to_neo4j(nodes, relationships)
+                        success = insert_graph_to_neo4j(neo4j_driver, nodes, relationships)
                         if success:
                             neo4j_status = f"\n✅ Knowledge graph inserted into Neo4j ({len(nodes)} nodes, {len(relationships)} relationships)"
                         else:

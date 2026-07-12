@@ -1,5 +1,4 @@
 import os
-from neo4j import GraphDatabase
 import shutil
 from dotenv import load_dotenv
 import gradio as gr
@@ -151,31 +150,23 @@ def text_to_speech(text, lang='en'):
         print(error_msg)
         return error_msg
 
-# Neo4j connection setup
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+# Shared configuration and helpers (deduplicated across entry points)
+from config import (
+    NEO4J_URI,
+    NEO4J_USER,
+    NEO4J_PASSWORD,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    BASE_PERSIST_DIR,
+    BASE_VECTOR_DIR,
+    DEVICE as device,
+)
+from ollama_utils import check_ollama_connection, stream_ollama_response
+from neo4j_utils import create_neo4j_driver
 
-neo4j_driver = None
-try:
-    neo4j_driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-    # Test the connection
-    with neo4j_driver.session() as session:
-        session.run("RETURN 1")
-    print("✅ Connected to Neo4j successfully")
-except Exception as e:
-    print(f"⚠️ Could not connect to Neo4j: {e}")
-    neo4j_driver = None
+# Neo4j connection (optional; only used for GraphRAG)
+neo4j_driver = create_neo4j_driver()
 
-# Ollama configuration
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma:2b"
-
-BASE_PERSIST_DIR = "./graph_db"
-BASE_VECTOR_DIR = "./vector_db"
-
-# Initialize device
-device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Using device: {device}")
 
 # Import your custom modules with better error handling
@@ -223,25 +214,6 @@ current_persist_dir = None
 current_vector_dir = None
 current_rag_type = None
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-
-def check_ollama_connection():
-    """Check if Ollama is running and model is available"""
-    try:
-        response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
-        if response.status_code == 200:
-            models = response.json().get('models', [])
-            model_names = [model['name'] for model in models]
-            if OLLAMA_MODEL in model_names or any(OLLAMA_MODEL in name for name in model_names):
-                return True, f"✅ Ollama connected. Available models: {', '.join(model_names[:3])}"
-            else:
-                return False, f"❌ Model '{OLLAMA_MODEL}' not found. Available: {', '.join(model_names[:3])}\nRun: ollama pull {OLLAMA_MODEL}"
-        return False, "❌ Ollama not responding"
-    except requests.exceptions.ConnectionError:
-        return False, f"❌ Cannot connect to Ollama at {OLLAMA_BASE_URL}\nMake sure Ollama is running: ollama serve"
-    except requests.exceptions.Timeout:
-        return False, "❌ Ollama connection timeout"
-    except Exception as e:
-        return False, f"❌ Ollama connection failed: {str(e)}"
 
 def get_graph_rag_context(question):
     """Get relevant context from GraphRAG system"""
@@ -303,41 +275,6 @@ def get_rag_context(question, k=3):
     except Exception as e:
         print(f"Error getting RAG context: {e}")
         return "Error retrieving context"
-
-def stream_ollama_response(prompt):
-    """Stream response from Ollama using direct API calls"""
-    try:
-        url = f"{OLLAMA_BASE_URL}/api/generate"
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": True
-        }
-        
-        response = requests.post(url, json=payload, stream=True, timeout=30)
-        
-        if response.status_code != 200:
-            yield f"❌ Error: Ollama responded with status {response.status_code}"
-            return
-        
-        full_response = ""
-        for line in response.iter_lines():
-            if line:
-                try:
-                    data = json.loads(line)
-                    if 'response' in data:
-                        chunk = data['response']
-                        full_response += chunk
-                        yield full_response
-                    if data.get('done', False):
-                        break
-                except json.JSONDecodeError:
-                    continue
-                    
-    except requests.exceptions.RequestException as e:
-        yield f"❌ Connection error: {str(e)}"
-    except Exception as e:
-        yield f"❌ Unexpected error: {str(e)}"
 
 def stream_rag_answer(question):
     """Stream RAG answer with improved error handling"""
